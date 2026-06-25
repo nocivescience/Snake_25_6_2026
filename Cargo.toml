@@ -1,0 +1,9 @@
+[package]
+name = "Snake_25_6_2026"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ggez = "0.10.0"
+minifb = "0.28.0"
+rand = "0.10.1"
