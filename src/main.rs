@@ -1,12 +1,10 @@
-use minifb::{Key, Window, WindowOptions};
-use rand;
+use macroquad::prelude::*;
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
 
 // Configuración de la pantalla
-const WIDTH: usize = 900;
-const HEIGHT: usize = 600;
-const CELL_SIZE: usize = 30;
+const WIDTH: f32 = 900.0;
+const HEIGHT: f32 = 600.0;
+const CELL_SIZE: f32 = 30.0;
 const GRID_WIDTH: i16 = (WIDTH / CELL_SIZE) as i16;
 const GRID_HEIGHT: i16 = (HEIGHT / CELL_SIZE) as i16;
 
@@ -23,20 +21,27 @@ struct Game {
 impl Game {
     fn new() -> Self {
         let mut snake = VecDeque::new();
+        // Empezamos en el centro
         snake.push_back((GRID_WIDTH / 2, GRID_HEIGHT / 2));
         
-        Game {
+        let mut game = Game {
             snake,
             direction: Direction::Right,
-            food: (5, 5),
+            food: (0, 0),
             game_over: false,
-        }
+        };
+        game.spawn_food();
+        game
     }
 
     fn spawn_food(&mut self) {
-        let mut rng = rand::rng();
         loop {
-            let new_food = (rand::random_range(0..GRID_WIDTH), rand::random_range(0..GRID_HEIGHT));
+            // Macroquad tiene su propio módulo rand integrado optimizado para web/nativo
+            let new_food = (
+                rand::gen_range(0, GRID_WIDTH),
+                rand::gen_range(0, GRID_HEIGHT),
+            );
+
             if !self.snake.contains(&new_food) {
                 self.food = new_food;
                 break;
@@ -55,14 +60,16 @@ impl Game {
             Direction::Right => (head.0 + 1, head.1),
         };
 
-        // Colisiones con bordes o consigo misma
+        // Colisiones con bordes o con su propio cuerpo
         if new_head.0 < 0 || new_head.0 >= GRID_WIDTH || new_head.1 < 0 || new_head.1 >= GRID_HEIGHT || self.snake.contains(&new_head) {
             self.game_over = true;
             return;
         }
 
+        // Avanzar la cabeza
         self.snake.push_front(new_head);
 
+        // Si come, spawnea nueva comida y no eliminamos la cola (crece)
         if new_head == self.food {
             self.spawn_food();
         } else {
@@ -71,71 +78,79 @@ impl Game {
     }
 }
 
-// Dibuja un cuadrado de un color (en formato 0x00RRGGBB) directamente en el buffer de píxeles
-fn draw_rect(buffer: &mut Vec<u32>, x: usize, y: usize, size: usize, color: u32) {
-    for row in 0..size {
-        let screen_y = y + row;
-        if screen_y >= HEIGHT { continue; }
-        for col in 0..size {
-            let screen_x = x + col;
-            if screen_x >= WIDTH { continue; }
-            buffer[screen_y * WIDTH + screen_x] = color;
-        }
+fn ventana_config() -> Conf {
+    Conf {
+        window_title: "Snake Minimalista - Rust (macroquad)".to_string(),
+        window_width: WIDTH as i32,
+        window_height: HEIGHT as i32,
+        window_resizable: false,
+        ..Default::default()
     }
 }
 
-fn main() {
-    let mut window = Window::new(
-        "Snake Minimalista - Rust",
-        WIDTH,
-        HEIGHT,
-        WindowOptions::default(),
-    ).unwrap_or_else(|e| panic!("{}", e));
-
-    // Forzar límite de FPS para el ciclo de eventos de minifb
-    window.set_target_fps(60);
-    
+#[macroquad::main(ventana_config)]
+async fn main() {
     let mut game = Game::new();
-    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT]; // El framebuffer de la ventana
-    let mut last_tick = Instant::now();
-    let tick_rate = Duration::from_millis(130); // Velocidad de la serpiente
+    
+    // Variables para controlar el tiempo del movimiento (Tick Rate)
+    let mut ultimo_tick = get_time();
+    let tick_rate = 0.130; // 130 milisegundos en segundos (f64)
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
-        // Manejo nativo de entradas del teclado sin callbacks engorrosos
-        if window.is_key_down(Key::Up) && game.direction != Direction::Down { game.direction = Direction::Up; }
-        if window.is_key_down(Key::Down) && game.direction != Direction::Up { game.direction = Direction::Down; }
-        if window.is_key_down(Key::Left) && game.direction != Direction::Right { game.direction = Direction::Left; }
-        if window.is_key_down(Key::Right) && game.direction != Direction::Left { game.direction = Direction::Right; }
+    loop {
+        // --- 1. ENTRADA DE TECLADO ---
+        if is_key_down(KeyCode::Up) && game.direction != Direction::Down { game.direction = Direction::Up; }
+        if is_key_down(KeyCode::Down) && game.direction != Direction::Up { game.direction = Direction::Down; }
+        if is_key_down(KeyCode::Left) && game.direction != Direction::Right { game.direction = Direction::Left; }
+        if is_key_down(KeyCode::Right) && game.direction != Direction::Left { game.direction = Direction::Right; }
 
-        // Actualizar el estado del juego según el reloj
-        if last_tick.elapsed() >= tick_rate {
-            game.update();
-            last_tick = Instant::now();
-        }
+        let mut color = GREEN; 
 
-        // Si el juego termina, reiniciar automáticamente presionando Enter
-        if game.game_over && window.is_key_down(Key::Enter) {
+        // Reiniciar juego con Enter si perdiste
+        if game.game_over && is_key_down(KeyCode::Enter) {
             game = Game::new();
+            ultimo_tick = get_time();
         }
 
-        // --- RENDERIZADO ---
-        // Limpiar pantalla a Negro (0x000000)
-        buffer.fill(0x000000);
+        // --- 2. LÓGICA DEL JUEGO (TICK RATE) ---
+        let tiempo_actual = get_time();
+        if tiempo_actual - ultimo_tick >= tick_rate {
+            game.update();
+            ultimo_tick = tiempo_actual;
+        }
 
+        // --- 3. RENDERIZADO ---
         if !game.game_over {
-            // Dibujar comida (Rojo: 0xFF0000)
-            draw_rect(&mut buffer, game.food.0 as usize * CELL_SIZE, game.food.1 as usize * CELL_SIZE, CELL_SIZE, 0xFF0000);
+            // Fondo Negro
+            clear_background(BLACK);
 
-            // Dibujar serpiente (Verde: 0x00FF00) con bordes pequeños
+            // Dibujar comida (Rojo)
+            draw_rectangle(
+                game.food.0 as f32 * CELL_SIZE,
+                game.food.1 as f32 * CELL_SIZE,
+                CELL_SIZE,
+                CELL_SIZE,
+                RED,
+            );
+
+            // Dibujar serpiente (Verde) dejando un pequeño margen de 2px
             for segment in &game.snake {
-                draw_rect(&mut buffer, segment.0 as usize * CELL_SIZE, segment.1 as usize * CELL_SIZE, CELL_SIZE - 2, 0x00FF00);
+                draw_rectangle(
+                    segment.0 as f32 * CELL_SIZE,
+                    segment.1 as f32 * CELL_SIZE,
+                    CELL_SIZE - 2.0,
+                    CELL_SIZE - 2.0,
+                    color,
+                );
             }
         } else {
-            // Pantalla de Game Over (Fondo Gris oscuro: 0x333333)
-            buffer.fill(0x333333);
+            // Pantalla de Game Over: Fondo Gris Oscuro
+            clear_background(DARKGRAY);
+            
+            // Opcional: Dibujar un texto de Game Over en el centro
+            draw_text("GAME OVER", WIDTH / 2.0 - 90.0, HEIGHT / 2.0, 40.0, WHITE);
+            draw_text("Presiona ENTER para reiniciar", WIDTH / 2.0 - 140.0, HEIGHT / 2.0 + 40.0, 20.0, LIGHTGRAY);
         }
 
-        // Enviar los píxeles a la ventana de Manjaro
-        window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
+        next_frame().await;
     }
 }
