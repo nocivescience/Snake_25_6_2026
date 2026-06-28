@@ -15,19 +15,22 @@ struct Game {
     snake: VecDeque<(i16, i16)>,
     direction: Direction,
     food: (i16, i16),
+    food_color: Color, // <-- Guardamos el color aquí para que persista
+    score: String,
     game_over: bool,
 }
 
 impl Game {
     fn new() -> Self {
         let mut snake = VecDeque::new();
-        // Empezamos en el centro
         snake.push_back((GRID_WIDTH / 2, GRID_HEIGHT / 2));
         
         let mut game = Game {
             snake,
             direction: Direction::Right,
             food: (0, 0),
+            food_color: RED, // Color inicial por defecto
+            score: "Hola Mundo".to_string(),
             game_over: false,
         };
         game.spawn_food();
@@ -36,21 +39,22 @@ impl Game {
 
     fn spawn_food(&mut self) {
         loop {
-            // Macroquad tiene su propio módulo rand integrado optimizado para web/nativo
             let new_food = (
                 rand::gen_range(0, GRID_WIDTH),
                 rand::gen_range(0, GRID_HEIGHT),
             );
 
-            let new_color = Color::new(
-                    rand::gen_range(0.0, 1.0),
-                    rand::gen_range(0.0, 1.0),
-                    rand::gen_range(0.0, 1.0),
-                    rand::gen_range(0.0, 1.0),
-                );
-
             if !self.snake.contains(&new_food) {
                 self.food = new_food;
+                
+                // Asignamos el nuevo color aleatorio directamente a la estructura
+                // El cuarto parámetro (Alfa) lo dejamos en 1.0 para que no sea transparente
+                self.food_color = Color::new(
+                    rand::gen_range(0.0, 1.0),
+                    rand::gen_range(0.0, 1.0),
+                    rand::gen_range(0.0, 1.0),
+                    1.0, 
+                );
                 break;
             }
         }
@@ -67,16 +71,13 @@ impl Game {
             Direction::Right => (head.0 + 1, head.1),
         };
 
-        // Colisiones con bordes o con su propio cuerpo
         if new_head.0 < 0 || new_head.0 >= GRID_WIDTH || new_head.1 < 0 || new_head.1 >= GRID_HEIGHT || self.snake.contains(&new_head) {
             self.game_over = true;
             return;
         }
 
-        // Avanzar la cabeza
         self.snake.push_front(new_head);
 
-        // Si come, spawnea nueva comida y no eliminamos la cola (crece)
         if new_head == self.food {
             self.spawn_food();
         } else {
@@ -98,62 +99,51 @@ fn ventana_config() -> Conf {
 #[macroquad::main(ventana_config)]
 async fn main() {
     let mut game = Game::new();
-
-    let color = GREEN;
     
-    // Variables para controlar el tiempo del movimiento (Tick Rate)
     let mut ultimo_tick = get_time();
-    let tick_rate = 0.130; // 130 milisegundos en segundos (f64)
+    let tick_rate = 0.130;
 
     loop {
-        // --- 1. ENTRADA DE TECLADO ---
         if is_key_down(KeyCode::Up) && game.direction != Direction::Down { game.direction = Direction::Up; }
         if is_key_down(KeyCode::Down) && game.direction != Direction::Up { game.direction = Direction::Down; }
         if is_key_down(KeyCode::Left) && game.direction != Direction::Right { game.direction = Direction::Left; }
         if is_key_down(KeyCode::Right) && game.direction != Direction::Left { game.direction = Direction::Right; }
 
-        // Reiniciar juego con Enter si perdiste
         if game.game_over && is_key_down(KeyCode::Enter) {
             game = Game::new();
             ultimo_tick = get_time();
         }
 
-        // --- 2. LÓGICA DEL JUEGO (TICK RATE) ---
         let tiempo_actual = get_time();
         if tiempo_actual - ultimo_tick >= tick_rate {
             game.update();
             ultimo_tick = tiempo_actual;
         }
 
-        // --- 3. RENDERIZADO ---
         if !game.game_over {
-            // Fondo Negro
             clear_background(BLACK);
 
-            // Dibujar comida (Rojo)
+            // CORRECCIÓN 1: Ahora le pasamos game.food_color que cambia cada vez que come
             draw_rectangle(
                 game.food.0 as f32 * CELL_SIZE,
                 game.food.1 as f32 * CELL_SIZE,
                 CELL_SIZE,
                 CELL_SIZE,
-                color
+                game.food_color, 
             );
 
-            // Dibujar serpiente (Verde) dejando un pequeño margen de 2px
+            // CORRECCIÓN 2: Cambiado el "color" inexistente por GREEN explícito para la serpiente
             for segment in &game.snake {
                 draw_rectangle(
                     segment.0 as f32 * CELL_SIZE,
                     segment.1 as f32 * CELL_SIZE,
                     CELL_SIZE - 2.0,
                     CELL_SIZE - 2.0,
-                    color,
+                    GREEN, 
                 );
             }
         } else {
-            // Pantalla de Game Over: Fondo Gris Oscuro
             clear_background(DARKGRAY);
-            
-            // Opcional: Dibujar un texto de Game Over en el centro
             draw_text("GAME OVER", WIDTH / 2.0 - 90.0, HEIGHT / 2.0, 40.0, WHITE);
             draw_text("Presiona ENTER para reiniciar", WIDTH / 2.0 - 140.0, HEIGHT / 2.0 + 40.0, 20.0, LIGHTGRAY);
         }

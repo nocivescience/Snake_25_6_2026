@@ -9,3 +9,7 @@ macroquad = "0.4.15"
 minifb = "0.28.0"
 nannou = "0.20.0"
 rand = "0.10.1"
+
+[[bin]]
+name = "colores_food"
+path = "src/colores_food.rs"
